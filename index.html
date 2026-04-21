@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAMA Globe</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+
+<style>
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+  html, body {
+    width:100%; height:100%;
+    background: transparent;
+    overflow: hidden;
+  }
+  .globe-area {
+    width:100%; height:100vh;
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+  }
+  canvas { cursor:grab; display:block; }
+  canvas:active { cursor:grabbing; }
+  .city-tip {
+    position:absolute;
+    background:rgba(8,13,24,.92);
+    border:1px solid rgba(0,90,156,.6);
+    color:#fff;
+    font-size:11px; font-weight:600;
+    letter-spacing:.05em; text-transform:uppercase;
+    padding:5px 10px; border-radius:4px;
+    pointer-events:none; white-space:nowrap;
+    transform:translate(-50%,-150%);
+    opacity:0; transition:opacity .25s;
+    font-family:'Segoe UI',system-ui,sans-serif;
+  }
+  .city-tip.gold { border-color:rgba(245,166,35,.6); }
+  .arc-label {
+    position:absolute;
+    color:#7ab8e8;
+    font-size:10px; font-weight:700;
+    letter-spacing:.08em;
+    pointer-events:none;
+    transform:translate(-50%,-50%);
+    opacity:0; transition:opacity .4s;
+    font-family:'Segoe UI',system-ui,sans-serif;
+    text-shadow:0 0 8px rgba(0,90,156,.8);
+  }
+</style>
+</head>
+<body>
+<div class="globe-area" id="globeArea">
+  <canvas id="globe"></canvas>
+</div>
+<script>
+const BLUE='#005a9c', GOLD='#f5a623';
+
+const regions = [
+  { name:'North America', chapters:[
+    {name:'New York',lon:-74.0,lat:40.7,status:'affiliated'},
+    {name:'Los Angeles',lon:-118.2,lat:34.1,status:'affiliated'},
+    {name:'San Francisco',lon:-122.4,lat:37.8,status:'affiliated'},
+    {name:'Chicago',lon:-87.6,lat:41.9,status:'affiliated'},
+    {name:'Seattle',lon:-122.3,lat:47.6,status:'affiliated'},
+    {name:'Philadelphia',lon:-75.2,lat:40.0,status:'affiliated'},
+    {name:'Boston',lon:-71.1,lat:42.4,status:'affiliated'},
+    {name:'Houston',lon:-95.4,lat:29.8,status:'affiliated'},
+    {name:'Phoenix',lon:-112.1,lat:33.4,status:'affiliated'},
+    {name:'Denver',lon:-104.9,lat:39.7,status:'affiliated'},
+    {name:'Portland',lon:-122.7,lat:45.5,status:'forming'},
+    {name:'Dallas',lon:-96.8,lat:32.8,status:'affiliated'},
+    {name:'Calgary',lon:-114.1,lat:51.0,status:'affiliated'},
+    {name:'Edmonton',lon:-113.5,lat:53.5,status:'forming'},
+    {name:'Toronto',lon:-79.4,lat:43.7,status:'affiliated'},
+    {name:'Ottawa',lon:-75.7,lat:45.4,status:'forming'},
+    {name:'Vancouver',lon:-123.1,lat:49.3,status:'affiliated'},
+  ]},
+  { name:'Latin America', chapters:[
+    {name:'Buenos Aires',lon:-58.4,lat:-34.6,status:'affiliated'},
+    {name:'São Paulo',lon:-46.6,lat:-23.5,status:'affiliated'},
+    {name:'Rio de Janeiro',lon:-43.2,lat:-22.9,status:'affiliated'},
+    {name:'Bogotá',lon:-74.1,lat:4.7,status:'affiliated'},
+    {name:'Santiago',lon:-70.7,lat:-33.5,status:'affiliated'},
+    {name:'Lima',lon:-77.0,lat:-12.0,status:'forming'},
+    {name:'Mexico City',lon:-99.1,lat:19.4,status:'affiliated'},
+    {name:'Panama City',lon:-79.5,lat:9.0,status:'forming'},
+    {name:'Quito',lon:-78.5,lat:-0.2,status:'forming'},
+    {name:'Guatemala City',lon:-90.5,lat:14.6,status:'forming'},
+    {name:'Montevideo',lon:-56.2,lat:-34.9,status:'affiliated'},
+    {name:'Caracas',lon:-66.9,lat:10.5,status:'forming'},
+  ]},
+  { name:'Europe', chapters:[
+    {name:'London',lon:-0.1,lat:51.5,status:'affiliated'},
+    {name:'Paris',lon:2.35,lat:48.85,status:'affiliated'},
+    {name:'Brussels',lon:4.35,lat:50.85,status:'affiliated'},
+    {name:'Amsterdam',lon:4.9,lat:52.4,status:'affiliated'},
+    {name:'Berlin',lon:13.4,lat:52.5,status:'affiliated'},
+    {name:'Madrid',lon:-3.7,lat:40.4,status:'affiliated'},
+    {name:'Bologna',lon:11.3,lat:44.5,status:'affiliated'},
+    {name:'Lisbon',lon:-9.1,lat:38.7,status:'affiliated'},
+    {name:'Vienna',lon:16.4,lat:48.2,status:'affiliated'},
+    {name:'Warsaw',lon:21.0,lat:52.2,status:'affiliated'},
+    {name:'Prague',lon:14.5,lat:50.1,status:'affiliated'},
+    {name:'Budapest',lon:19.0,lat:47.5,status:'affiliated'},
+    {name:'Oslo',lon:10.75,lat:59.9,status:'affiliated'},
+    {name:'Helsinki',lon:25.0,lat:60.2,status:'affiliated'},
+    {name:'Copenhagen',lon:12.6,lat:55.7,status:'affiliated'},
+    {name:'Dublin',lon:-6.3,lat:53.3,status:'affiliated'},
+    {name:'Zürich',lon:8.5,lat:47.4,status:'affiliated'},
+    {name:'Geneva',lon:6.1,lat:46.2,status:'affiliated'},
+    {name:'Kyiv',lon:30.5,lat:50.5,status:'forming'},
+    {name:'Istanbul',lon:29.0,lat:41.0,status:'affiliated'},
+  ]},
+  { name:'Africa', chapters:[
+    {name:'Johannesburg',lon:28.0,lat:-26.2,status:'affiliated'},
+    {name:'Nairobi',lon:36.8,lat:-1.3,status:'affiliated'},
+    {name:'Abuja',lon:7.5,lat:9.1,status:'forming'},
+    {name:'Accra',lon:-0.2,lat:5.6,status:'forming'},
+    {name:'Casablanca',lon:-7.6,lat:33.6,status:'affiliated'},
+    {name:'Algiers',lon:3.1,lat:36.7,status:'forming'},
+    {name:'Cairo',lon:31.2,lat:30.1,status:'affiliated'},
+    {name:'Windhoek',lon:17.1,lat:-22.6,status:'forming'},
+    {name:'Dar Es Salaam',lon:39.3,lat:-6.8,status:'forming'},
+    {name:'Tunis',lon:10.2,lat:36.8,status:'forming'},
+  ]},
+  { name:'Middle East', chapters:[
+    {name:'Dubai',lon:55.3,lat:25.2,status:'affiliated'},
+    {name:'Abu Dhabi',lon:54.4,lat:24.5,status:'affiliated'},
+    {name:'Riyadh',lon:46.7,lat:24.7,status:'affiliated'},
+    {name:'Doha',lon:51.5,lat:25.3,status:'affiliated'},
+    {name:'Amman',lon:35.9,lat:31.9,status:'forming'},
+    {name:'Kuwait City',lon:47.9,lat:29.4,status:'forming'},
+    {name:'Muscat',lon:58.6,lat:23.6,status:'forming'},
+    {name:'Manama',lon:50.6,lat:26.2,status:'forming'},
+    {name:'Damascus',lon:36.3,lat:33.5,status:'forming'},
+  ]},
+  { name:'Asia Pacific', chapters:[
+    {name:'Sydney',lon:151.2,lat:-33.9,status:'affiliated'},
+    {name:'Tokyo',lon:139.7,lat:35.7,status:'affiliated'},
+    {name:'New Delhi',lon:77.2,lat:28.6,status:'affiliated'},
+    {name:'Bangalore',lon:77.6,lat:12.9,status:'affiliated'},
+    {name:'Singapore',lon:103.8,lat:1.3,status:'affiliated'},
+    {name:'Bangkok',lon:100.5,lat:13.8,status:'affiliated'},
+    {name:'Jakarta',lon:106.8,lat:-6.2,status:'forming'},
+    {name:'Kuala Lumpur',lon:101.7,lat:3.1,status:'affiliated'},
+    {name:'Christchurch',lon:172.6,lat:-43.5,status:'affiliated'},
+    {name:'Ulaanbaatar',lon:106.9,lat:47.9,status:'forming'},
+    {name:'Nur-Sultan',lon:71.4,lat:51.2,status:'forming'},
+  ]},
+];
+
+const allChapters = regions.flatMap(r=>r.chapters);
+
+const arcs = [
+  {from:'New York',to:'London',label:'NYC \u2192 LON'},
+  {from:'San Francisco',to:'Tokyo',label:'SFO \u2192 TYO'},
+  {from:'London',to:'Dubai',label:'LON \u2192 DXB'},
+  {from:'Dubai',to:'Singapore',label:null},
+  {from:'São Paulo',to:'Johannesburg',label:null},
+  {from:'Sydney',to:'Singapore',label:null},
+  {from:'New York',to:'São Paulo',label:null},
+];
+
+const area = document.getElementById('globeArea');
+const canvas = document.getElementById('globe');
+const ctx = canvas.getContext('2d');
+
+function resize() { canvas.width=area.clientWidth; canvas.height=area.clientHeight; }
+resize();
+window.addEventListener('resize',resize);
+
+const R = ()=>Math.min(canvas.width,canvas.height)*0.38;
+
+let rotX=-20, rotY=20, dragging=false, lastX=0, lastY=0, autoRotate=true;
+let dots=[], arcProgress=0;
+
+function project(lon,lat,rx,ry) {
+  const lam=(lon+rx)*Math.PI/180, phi=lat*Math.PI/180;
+  const cr=Math.cos(ry*Math.PI/180), sr=Math.sin(ry*Math.PI/180);
+  const r=R();
+  return {
+    x: r*Math.cos(phi)*Math.sin(lam),
+    y: r*(Math.sin(phi)*cr - Math.cos(phi)*Math.cos(lam)*sr),
+    z: Math.cos(phi)*Math.cos(lam)*cr + Math.sin(phi)*sr
+  };
+}
+function sc(p){return{sx:canvas.width/2+p.x, sy:canvas.height/2-p.y};}
+
+function gc(lon1,lat1,lon2,lat2,t) {
+  const r=d=>d*Math.PI/180, g=r=>r*180/Math.PI;
+  const p1=r(lat1),l1=r(lon1),p2=r(lat2),l2=r(lon2);
+  const d=Math.acos(Math.min(1,Math.sin(p1)*Math.sin(p2)+Math.cos(p1)*Math.cos(p2)*Math.cos(l2-l1)));
+  if(d<0.0001)return[lon1,lat1];
+  const A=Math.sin((1-t)*d)/Math.sin(d), B=Math.sin(t*d)/Math.sin(d);
+  const x=A*Math.cos(p1)*Math.cos(l1)+B*Math.cos(p2)*Math.cos(l2);
+  const y=A*Math.cos(p1)*Math.sin(l1)+B*Math.cos(p2)*Math.sin(l2);
+  const z=A*Math.sin(p1)+B*Math.sin(p2);
+  return[g(Math.atan2(y,x)), g(Math.atan2(z,Math.sqrt(x*x+y*y)))];
+}
+
+function drawArc(c1,c2,prog) {
+  const steps=80;
+  ctx.beginPath();
+  let started=false;
+  for(let i=0;i<=steps*prog;i++) {
+    const [lon,lat]=gc(c1.lon,c1.lat,c2.lon,c2.lat,i/steps);
+    const p=project(lon,lat,rotX,rotY), s=sc(p);
+    if(p.z<0){started=false;continue;}
+    if(!started){ctx.moveTo(s.sx,s.sy);started=true;}
+    else ctx.lineTo(s.sx,s.sy);
+  }
+  ctx.strokeStyle='rgba(0,122,204,0.65)';
+  ctx.lineWidth=1.2; ctx.stroke();
+  if(prog<1){
+    const [lon,lat]=gc(c1.lon,c1.lat,c2.lon,c2.lat,prog);
+    const p=project(lon,lat,rotX,rotY);
+    if(p.z>0){const s=sc(p);ctx.beginPath();ctx.arc(s.sx,s.sy,2.5,0,Math.PI*2);ctx.fillStyle='#7ab8e8';ctx.fill();}
+  }
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const r=R(), cx=canvas.width/2, cy=canvas.height/2;
+
+  // Globe base
+  const grad=ctx.createRadialGradient(cx-r*0.2,cy-r*0.2,r*0.1,cx,cy,r);
+  grad.addColorStop(0,'rgba(15,30,65,0.95)');
+  grad.addColorStop(0.5,'rgba(8,18,45,0.98)');
+  grad.addColorStop(1,'rgba(4,10,28,1)');
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.fillStyle=grad; ctx.fill();
+
+  // Blue rim glow
+  const rim=ctx.createRadialGradient(cx,cy,r*0.88,cx,cy,r*1.06);
+  rim.addColorStop(0,'transparent');
+  rim.addColorStop(0.6,'rgba(0,90,156,0.08)');
+  rim.addColorStop(1,'rgba(0,90,156,0.3)');
+  ctx.beginPath(); ctx.arc(cx,cy,r*1.06,0,Math.PI*2);
+  ctx.fillStyle=rim; ctx.fill();
+
+  // Land dots
+  dots.forEach(({lon,lat,land})=>{
+    const p=project(lon,lat,rotX,rotY);
+    if(p.z<0)return;
+    const s=sc(p), depth=(p.z+1)/2;
+    if(land){
+      ctx.beginPath(); ctx.arc(s.sx,s.sy,(0.9+depth*0.8)*0.55,0,Math.PI*2);
+      ctx.fillStyle=`rgba(80,120,180,${0.3+depth*0.5})`; ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(s.sx,s.sy,0.6,0,Math.PI*2);
+      ctx.fillStyle=`rgba(40,80,140,${0.04+depth*0.06})`; ctx.fill();
+    }
+  });
+
+  // Arcs
+  arcs.forEach((arc,i)=>{
+    const c1=allChapters.find(c=>c.name===arc.from);
+    const c2=allChapters.find(c=>c.name===arc.to);
+    if(!c1||!c2)return;
+    drawArc(c1,c2,Math.min(1,arcProgress));
+    if(arc.label){
+      const [mlon,mlat]=gc(c1.lon,c1.lat,c2.lon,c2.lat,0.18);
+      const p=project(mlon,mlat,rotX,rotY), s=sc(p);
+      let el=document.getElementById('al'+i);
+      if(!el){el=document.createElement('div');el.className='arc-label';el.id='al'+i;area.appendChild(el);}
+      el.textContent=arc.label;
+      if(p.z>0&&arcProgress>0.1){el.style.left=s.sx+'px';el.style.top=(s.sy-16)+'px';el.style.opacity=Math.min(1,(arcProgress-0.1)*5);}
+      else el.style.opacity='0';
+    }
+  });
+
+  // Chapter markers
+  allChapters.forEach(ch=>{
+    const p=project(ch.lon,ch.lat,rotX,rotY);
+    if(p.z<0.02)return;
+    const s=sc(p), isGold=ch.status==='forming';
+    const color=isGold?GOLD:BLUE;
+
+    // Glow halo
+    const g=ctx.createRadialGradient(s.sx,s.sy,0,s.sx,s.sy,7);
+    g.addColorStop(0,isGold?'rgba(245,166,35,0.35)':'rgba(0,90,156,0.4)');
+    g.addColorStop(1,'transparent');
+    ctx.beginPath(); ctx.arc(s.sx,s.sy,7,0,Math.PI*2);
+    ctx.fillStyle=g; ctx.fill();
+
+    // Dot
+    ctx.beginPath(); ctx.arc(s.sx,s.sy,2.8,0,Math.PI*2);
+    ctx.fillStyle=color; ctx.fill();
+
+    // Tooltip
+    let el=document.getElementById('ct-'+ch.name.replace(/[\s']/g,'-'));
+    if(!el){
+      el=document.createElement('div');
+      el.className='city-tip'+(isGold?' gold':'');
+      el.id='ct-'+ch.name.replace(/[\s']/g,'-');
+      el.textContent=ch.name;
+      area.appendChild(el);
+    }
+    if(p.z>0.15){el.style.left=s.sx+'px';el.style.top=s.sy+'px';el.style.opacity=Math.min(0.9,(p.z-0.15)*3);}
+    else el.style.opacity='0';
+  });
+}
+
+let last=0;
+function animate(ts){
+  const dt=Math.min(ts-last,50); last=ts;
+  if(autoRotate) rotX-=0.06;
+  arcProgress=Math.min(1,arcProgress+dt/2500);
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// Load world atlas from public CDN
+d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json').then(world=>{
+  const land=topojson.feature(world,world.objects.land);
+  const step=2.2;
+  for(let lat=-90;lat<=90;lat+=step)
+    for(let lon=-180;lon<=180;lon+=step)
+      dots.push({lon,lat,land:d3.geoContains(land,[lon,lat])});
+  requestAnimationFrame(animate);
+});
+
+// Mouse drag
+canvas.addEventListener('mousedown',e=>{dragging=true;autoRotate=false;lastX=e.clientX;lastY=e.clientY;});
+window.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  rotX+=(e.clientX-lastX)*0.4;
+  rotY=Math.max(-80,Math.min(80,rotY-(e.clientY-lastY)*0.3));
+  lastX=e.clientX;lastY=e.clientY;
+});
+window.addEventListener('mouseup',()=>{if(dragging){dragging=false;autoRotate=true;}});
+
+// Touch drag
+canvas.addEventListener('touchstart',e=>{dragging=true;autoRotate=false;lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;},{passive:true});
+window.addEventListener('touchmove',e=>{
+  if(!dragging)return;
+  rotX+=(e.touches[0].clientX-lastX)*0.4;
+  rotY=Math.max(-80,Math.min(80,rotY-(e.touches[0].clientY-lastY)*0.3));
+  lastX=e.touches[0].clientX;lastY=e.touches[0].clientY;
+},{passive:true});
+window.addEventListener('touchend',()=>{dragging=false;autoRotate=true;});
+</script>
+</body>
+</html>
