@@ -8,6 +8,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@600;700&display=swap" rel="stylesheet">
+
 <style>
   *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
   html, body {
@@ -15,8 +17,31 @@
     background: transparent;
     overflow: hidden;
   }
-  .globe-area {
+  .globe-wrapper {
     width:100%; height:100vh;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    position:relative;
+  }
+  .globe-title {
+    color:#005a9c;
+    font-family:'Raleway',sans-serif;
+    font-size:clamp(18px, 3vw, 28px);
+    font-weight:700;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    text-align:center;
+    padding:0 20px;
+    margin-bottom:-10px;
+    position:relative;
+    z-index:2;
+  }
+  .globe-title span {
+    color:#005a9c;
+  }
+  .globe-area {
+    width:100%; flex:1;
+    max-height: calc(100vh - 60px);
     position:relative;
     display:flex; align-items:center; justify-content:center;
   }
@@ -50,8 +75,11 @@
 </style>
 </head>
 <body>
-<div class="globe-area" id="globeArea">
-  <canvas id="globe"></canvas>
+<div class="globe-wrapper">
+  <div class="globe-title">DAMA-I<sup>&reg;</sup> Chapters <span>Worldwide</span></div>
+  <div class="globe-area" id="globeArea">
+    <canvas id="globe"></canvas>
+  </div>
 </div>
 <script>
 const BLUE='#005a9c', GOLD='#f5a623';
@@ -199,8 +227,12 @@ function gc(lon1,lat1,lon2,lat2,t) {
   return[g(Math.atan2(y,x)), g(Math.atan2(z,Math.sqrt(x*x+y*y)))];
 }
 
-function drawArc(c1,c2,prog) {
+let flowTime = 0;
+
+function drawArc(c1,c2,prog,arcIndex) {
   const steps=80;
+  
+  // Draw the base arc line
   ctx.beginPath();
   let started=false;
   for(let i=0;i<=steps*prog;i++) {
@@ -210,8 +242,34 @@ function drawArc(c1,c2,prog) {
     if(!started){ctx.moveTo(s.sx,s.sy);started=true;}
     else ctx.lineTo(s.sx,s.sy);
   }
-  ctx.strokeStyle='rgba(0,122,204,0.65)';
-  ctx.lineWidth=1.2; ctx.stroke();
+  ctx.strokeStyle='rgba(0,122,204,0.35)';
+  ctx.lineWidth=1; ctx.stroke();
+
+  // Data flow pulse - a slow glowing dot that travels along the arc
+  if(prog>=1) {
+    const speed = 0.00025 + arcIndex * 0.00005;
+    const pulseT = (flowTime * speed + arcIndex * 0.4) % 1;
+    
+    const [plon,plat]=gc(c1.lon,c1.lat,c2.lon,c2.lat,pulseT);
+    const pp=project(plon,plat,rotX,rotY);
+    if(pp.z>0) {
+      const ss=sc(pp);
+      // Fade in at start, fade out at end
+      const fade = Math.sin(pulseT * Math.PI);
+      // Soft glow
+      const pg=ctx.createRadialGradient(ss.sx,ss.sy,0,ss.sx,ss.sy,8);
+      pg.addColorStop(0,`rgba(120,190,255,${0.7*fade})`);
+      pg.addColorStop(0.3,`rgba(0,122,204,${0.3*fade})`);
+      pg.addColorStop(1,'transparent');
+      ctx.beginPath(); ctx.arc(ss.sx,ss.sy,8,0,Math.PI*2);
+      ctx.fillStyle=pg; ctx.fill();
+      // White center
+      ctx.beginPath(); ctx.arc(ss.sx,ss.sy,1.5,0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,255,255,${0.7*fade})`; ctx.fill();
+    }
+  }
+
+  // Initial draw-in animation dot
   if(prog<1){
     const [lon,lat]=gc(c1.lon,c1.lat,c2.lon,c2.lat,prog);
     const p=project(lon,lat,rotX,rotY);
@@ -280,7 +338,7 @@ function draw() {
     const s=sc(p), depth=(p.z+1)/2;
     if(land){
       ctx.beginPath(); ctx.arc(s.sx,s.sy,(0.9+depth*0.8)*0.55,0,Math.PI*2);
-      ctx.fillStyle=`rgba(80,120,180,${0.3+depth*0.5})`; ctx.fill();
+      ctx.fillStyle=`rgba(180,200,230,${0.4+depth*0.55})`; ctx.fill();
     } else {
       ctx.beginPath(); ctx.arc(s.sx,s.sy,0.6,0,Math.PI*2);
       ctx.fillStyle=`rgba(40,80,140,${0.04+depth*0.06})`; ctx.fill();
@@ -292,7 +350,7 @@ function draw() {
     const c1=allChapters.find(c=>c.name===arc.from);
     const c2=allChapters.find(c=>c.name===arc.to);
     if(!c1||!c2)return;
-    drawArc(c1,c2,Math.min(1,arcProgress));
+    drawArc(c1,c2,Math.min(1,arcProgress),i);
     if(arc.label){
       const [mlon,mlat]=gc(c1.lon,c1.lat,c2.lon,c2.lat,0.18);
       const p=project(mlon,mlat,rotX,rotY), s=sc(p);
@@ -341,6 +399,7 @@ function animate(ts){
   const dt=Math.min(ts-last,50); last=ts;
   if(autoRotate) rotX-=0.06;
   arcProgress=Math.min(1,arcProgress+dt/2500);
+  flowTime+=dt;
   draw();
   requestAnimationFrame(animate);
 }
